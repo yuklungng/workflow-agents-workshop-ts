@@ -73,8 +73,18 @@ export async function processEntry(
   fields: string[],
   handler: (job: ReviewJob) => Promise<void>,
 ): Promise<void> {
-  // YOUR TURN — replace this throw with the ack semantics described above.
-  throw new Error('Exercise: implement processEntry (see docs/02-worker-agents.md)')
+  try {
+    const job = fieldsToJob(fields)
+    if (job) await handler(job)
+    // Success (or an unparseable entry we can't retry) → ack so the group never
+    // redelivers it.
+    await client.xack(STREAM, GROUP, id)
+  } catch (err) {
+    // Failure → leave the entry un-acked in the group's pending list so it can be
+    // retried later. Swallow the error so the consumer loop keeps running.
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[worker-agents:worker] entry ${id} failed (left un-acked for retry):`, message)
+  }
 }
 
 export interface ConsumeOptions {

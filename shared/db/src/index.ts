@@ -14,9 +14,9 @@ import { readFile } from 'node:fs/promises'
 import pg from 'pg'
 import type { SpanInfo, SpanOutcome, Tracer } from '@workshop/agent'
 import * as mem from './memory.js'
-import type { FindingRow, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
+import type { FindingRow, ReviewMeta, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
 
-export type { FindingRow, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
+export type { FindingRow, ReviewMeta, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
 
 const { Pool } = pg
 type PgPool = pg.Pool
@@ -46,15 +46,18 @@ export async function migrate(pool?: PgPool): Promise<void> {
 
 // ── Reviews ────────────────────────────────────────────────────────────────
 
-export async function createReview(prUrl: string, pool?: PgPool): Promise<string> {
-  if (!usePg(pool)) return mem.createReview(prUrl)
+export async function createReview(
+  prUrl: string,
+  meta: ReviewMeta = {},
+  pool?: PgPool,
+): Promise<string> {
+  if (!usePg(pool)) return mem.createReview(prUrl, meta)
   const active = pool ?? getPool()
   const id = globalThis.crypto.randomUUID()
-  await active.query('INSERT INTO reviews (id, pr_url, status) VALUES ($1, $2, $3)', [
-    id,
-    prUrl,
-    'running',
-  ])
+  await active.query(
+    'INSERT INTO reviews (id, pr_url, status, source, workflow) VALUES ($1, $2, $3, $4, $5)',
+    [id, prUrl, 'running', meta.source ?? null, meta.workflow ?? null],
+  )
   return id
 }
 

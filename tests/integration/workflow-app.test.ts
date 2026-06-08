@@ -28,7 +28,12 @@ test('POST /api/reviews dispatches the workflow and persists the result', async 
   assert.ok(id)
 
   // The workflow runs in the background; poll until it settles.
-  let final: { review: { status: string; verdict: string }; findings: unknown[] } | undefined
+  let final:
+    | {
+        review: { status: string; verdict: string; input_tokens: number; output_tokens: number }
+        findings: unknown[]
+      }
+    | undefined
   await waitFor(async () => {
     const detail = await app.fetch(new Request(`http://test/api/reviews/${id}`))
     final = (await detail.json()) as typeof final
@@ -38,6 +43,8 @@ test('POST /api/reviews dispatches the workflow and persists the result', async 
   assert.equal(final?.review.status, 'done')
   assert.equal(final?.review.verdict, 'approve')
   assert.ok((final?.findings.length ?? 0) >= 2)
+  assert.equal(typeof final?.review.input_tokens, 'number')
+  assert.equal(typeof final?.review.output_tokens, 'number')
 })
 
 test('healthz reports ok', async () => {

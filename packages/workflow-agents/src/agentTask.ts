@@ -15,10 +15,11 @@
  * the gateway; CLI sandbox runs omit it).
  */
 import { task } from "@renderinc/sdk/workflows";
+import type { TaskFunction } from "@renderinc/sdk/workflows";
 import { storeTracer } from "@workshop/db";
 import type { Agent, AgentInput, AgentResult } from "@workshop/agent";
 
-export type AgentTaskRun = (input: AgentInput, runId?: string) => Promise<AgentResult>;
+export type AgentTaskRun = TaskFunction<[input: AgentInput, runId?: string], AgentResult>;
 
 export function agentTask(agent: Agent): AgentTaskRun {
   return task(

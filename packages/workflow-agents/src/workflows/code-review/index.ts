@@ -14,7 +14,7 @@ import { task } from "@renderinc/sdk/workflows";
 import {
   prepareDiff,
   filterDiff,
-  parseDecision,
+  toReviewSummary,
   securityReviewer,
   performanceReviewer,
   uxReviewer,
@@ -58,16 +58,19 @@ export default task(
       reviewerTasks.push({ name: uxReviewer.name, run: uxTask });
     }
 
-    const reviews = await Promise.all(
+    const reviewerResults = await Promise.all(
       reviewerTasks.map(async ({ name, run }) => {
         const result = await run({ patches }, runId);
-        return { agent: name, note: result.text };
+        return { agent: name, note: result.text, usage: result.usage };
       }),
     );
 
-    const decision = await judgeTask({ findings: reviews }, runId);
-    const parsed = parseDecision(decision.text);
+    const decision = await judgeTask({ findings: reviewerResults.map(({ agent, note }) => ({ agent, note })) }, runId);
 
-    return { verdict: parsed.verdict, reason: parsed.reason, reviews };
+    // The fan-out above is the substrate-specific part worth seeing. Parsing the
+    // verdict, stripping reviewer usage, and totalling tokens is identical to the
+    // naive/worker patterns, so it lives in one shared helper rather than being
+    // copy-pasted here.
+    return toReviewSummary(reviewerResults, decision);
   },
 );

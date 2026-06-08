@@ -4,7 +4,7 @@ Everything you need to teach this workshop, even if you didn't build it. Read th
 once end-to-end before you run it the first time, then keep the **Run sheet** and
 **Solutions** sections open on a second screen while you present.
 
-The companion learner-facing material is in [`../docs`](../docs) (`00`–`04`). This
+The companion learner-facing material is in [`../docs`](../docs) (`00`–`05`). This
 guide is the teaching layer *on top* of those docs: objectives, timing, talk
 tracks, demos, the "aha" moments, common failure modes, and the worked solutions.
 
@@ -297,6 +297,11 @@ agent-native this substrate is.
      in a fresh instance per the `retry` config — no try/catch, no dead-letter, no
      queue. **Remove it when done.**
   4. **Bonus — fan out** both reviewers with `Promise.all` (mirrors `code-review`).
+- **Bonus points (for fast finishers or a take-home):** [04 — Bonus points](../docs/04-author-a-task.md#bonus-points)
+  has three guided, independent challenges — a **judge reflection loop**, **wiring
+  in an MCP tool**, and a **human-in-the-loop gate**. Each reinforces the spine:
+  the agentic capability is yours to write; durability/isolation/tracing stay the
+  platform's. Point a coding agent at them and let learners drive.
 - **The aha (say this verbatim-ish):** "You just added durable, retried, isolated,
   traced, parallel execution by writing a plain function and a config object. In
   Lab 1 that same guarantee took a queue, a consumer group, acks, and a pub/sub bus
@@ -316,6 +321,10 @@ agent-native this substrate is.
   real Workflow tasks.
 - **Close on the spine.** Re-draw it. Ask the room: "What changed in the agent
   across all three?" (Nothing.) That's the takeaway.
+- **Send them home with the map.** Point at [05 — Future iterations](../docs/05-future-iterations.md):
+  an eval harness, guardrails, circuit breakers, and observability deep-dives — the
+  production road, framed as "more steps, tasks, budgets, and tracers; still the
+  same agent."
 
 ---
 

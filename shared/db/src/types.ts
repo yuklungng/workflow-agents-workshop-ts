@@ -6,10 +6,20 @@ export interface ReviewRow {
   status: string
   verdict: string | null
   reason: string | null
+  /** Which package/pattern created the review (naive-agent, worker-agents, …). */
+  source: string | null
+  /** The workflow/pipeline that ran it (code-review, your-review, …). */
+  workflow: string | null
   input_tokens: number
   output_tokens: number
   created_at: string
   updated_at: string
+}
+
+/** Optional provenance recorded when a review is created. */
+export interface ReviewMeta {
+  source?: string
+  workflow?: string
 }
 
 export interface ReviewResultUpdate {

@@ -8,10 +8,11 @@
  * and the agent code never changes between them.
  */
 
-export { runReview, parseDecision } from './review.js'
+export { runReview, parseDecision, sumUsage, toReviewSummary } from './review.js'
 export type {
   ReviewEvent,
   ReviewResult,
+  ReviewSummary,
   ReviewFinding,
   ReviewDecision,
   RunReviewOptions,

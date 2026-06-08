@@ -32,6 +32,8 @@ await consumeReviews(
       for (const finding of result.reviews) {
         await addFinding(job.reviewId, finding.agent, finding.note)
       }
+      // Surface the judge's decision as its own finding alongside the specialists.
+      await addFinding(job.reviewId, 'judge', result.decision.reason || result.decision.verdict)
       await setReviewResult(job.reviewId, {
         status: 'done',
         verdict: result.decision.verdict,

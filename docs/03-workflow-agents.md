@@ -54,7 +54,6 @@ The GitHub webhook adapter
 ([`src/github.ts`](../packages/workflow-agents/src/github.ts))
 maps `pull_request` events onto the `code-review` task. Point a public repo's
 webhook (or a manual "Trigger Run") at the deployed service to review real PRs.
-Full webhook setup is in [code-review-setup.md](code-review-setup.md).
 
 ## What Render gives you here
 
@@ -86,4 +85,6 @@ server (`defineMcpSource`) makes it available to all three patterns at once.
 The agents are a library you *use*; the thing you *write* is tasks. Head to
 [04 — Author a task](04-author-a-task.md) and build the `your-review` workflow:
 a task with retry/timeout config, a deterministic step, and an agent composed as
-its own task — all auto-discovered.
+its own task — all auto-discovered. That doc also has **bonus points** (a judge
+reflection loop, an MCP tool, and a human-in-the-loop gate), and
+[05 — Future iterations](05-future-iterations.md) maps the road to production.

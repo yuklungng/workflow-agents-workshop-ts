@@ -2,8 +2,8 @@
  * Pattern 1 — Naive agent.
  *
  * One web service. The code-review agent runs *in-process, inside the request*:
- * the POST handler awaits the whole pipeline before responding. Simple and
- * complete — and exactly why it doesn't scale. A big PR ties up the request, a
+ * the POST handler awaits the whole pipeline before responding. Simple
+ * but it doesn't scale. A big PR ties up the request, a
  * redeploy kills in-flight reviews, and concurrent users compete for one process.
  * Patterns 2 and 3 fix that.
  */
@@ -31,7 +31,7 @@ export function createApp(): Hono {
     const body = (await c.req.json().catch(() => ({}))) as { prUrl?: string }
     if (!body.prUrl) return c.json({ error: 'prUrl is required' }, 400)
 
-    const id = await createReview(body.prUrl)
+    const id = await createReview(body.prUrl, { source: 'naive-agent', workflow: 'code-review' })
 
     // The naive part: we run the whole review here and block until it's done.
     try {
@@ -39,6 +39,8 @@ export function createApp(): Hono {
       for (const finding of result.reviews) {
         await addFinding(id, finding.agent, finding.note)
       }
+      // Surface the judge's decision as its own finding alongside the specialists.
+      await addFinding(id, 'judge', result.decision.reason || result.decision.verdict)
       await setReviewResult(id, {
         status: 'done',
         verdict: result.decision.verdict,

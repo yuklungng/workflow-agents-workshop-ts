@@ -25,7 +25,7 @@ export function createApp(): Hono {
     const body = (await c.req.json().catch(() => ({}))) as { prUrl?: string }
     if (!body.prUrl) return c.json({ error: 'prUrl is required' }, 400)
 
-    const id = await createReview(body.prUrl)
+    const id = await createReview(body.prUrl, { source: 'worker-agents', workflow: 'code-review' })
     await enqueueReview({ reviewId: id, prUrl: body.prUrl })
     // Return right away — the worker will pick it up. This is the whole point.
     return c.json({ id, status: 'queued' }, 202)

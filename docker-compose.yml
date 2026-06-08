@@ -1,0 +1,103 @@
+# Spin up Postgres, Redis, and all three workshop patterns locally.
+#
+#   docker compose up --build
+#
+# UIs:
+#   Pattern 1 (naive)     → http://localhost:3001
+#   Pattern 2 (worker)      → http://localhost:3002
+#   Pattern 3 (workflows)   → http://localhost:3003  (+ Render dev server on :8120)
+#
+# Pattern 3 runs `render workflows dev` so tasks go through the local Render workflow
+# runtime (nested agent tasks, retries, traces). For the fast in-process shortcut,
+# run on the host instead: npm run dev --workspace @workshop/workflow-agents
+
+x-app: &app
+  build: .
+  restart: unless-stopped
+  env_file:
+    - .env
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workshop
+      POSTGRES_PASSWORD: workshop
+      POSTGRES_DB: agents_workshop
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workshop -d agents_workshop"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  naive-agent:
+    <<: *app
+    command: node --import tsx packages/naive-agent/src/server.ts
+    environment:
+      DATABASE_URL: postgres://workshop:workshop@postgres:5432/agents_workshop
+      PORT: "3000"
+    ports:
+      - "3001:3000"
+
+  worker-web:
+    <<: *app
+    command: node --import tsx packages/worker-agents/src/web.ts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://workshop:workshop@postgres:5432/agents_workshop
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+    ports:
+      - "3002:3000"
+
+  worker:
+    <<: *app
+    command: node --import tsx packages/worker-agents/src/worker.ts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://workshop:workshop@postgres:5432/agents_workshop
+      REDIS_URL: redis://redis:6379
+
+  workflow-agents:
+    <<: *app
+    command: ["./scripts/docker-workflow-dev.sh"]
+    environment:
+      DATABASE_URL: postgres://workshop:workshop@postgres:5432/agents_workshop
+      RENDER_USE_LOCAL_DEV: "true"
+      RENDER_LOCAL_DEV_URL: http://127.0.0.1:8120
+      RENDER_API_KEY: local-dev
+      RENDER_DEV_PORT: "8120"
+      PORT: "3000"
+    ports:
+      - "3003:3000"
+      - "8120:8120"
+
+volumes:
+  postgres_data:

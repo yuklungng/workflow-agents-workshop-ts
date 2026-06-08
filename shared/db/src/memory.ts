@@ -7,14 +7,14 @@
  * separate processes, so it needs real Postgres to share state between them.
  */
 import type { SpanInfo, SpanOutcome, Tracer } from '@workshop/agent'
-import type { FindingRow, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
+import type { FindingRow, ReviewMeta, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
 
 const reviews = new Map<string, ReviewRow>()
 const findings: FindingRow[] = []
 const spans = new Map<string, SpanRow>()
 let findingSeq = 1
 
-export function createReview(prUrl: string): string {
+export function createReview(prUrl: string, meta: ReviewMeta = {}): string {
   const id = globalThis.crypto.randomUUID()
   const now = new Date().toISOString()
   reviews.set(id, {
@@ -23,6 +23,8 @@ export function createReview(prUrl: string): string {
     status: 'running',
     verdict: null,
     reason: null,
+    source: meta.source ?? null,
+    workflow: meta.workflow ?? null,
     input_tokens: 0,
     output_tokens: 0,
     created_at: now,

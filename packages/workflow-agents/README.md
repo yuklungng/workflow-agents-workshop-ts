@@ -64,8 +64,7 @@ curl -s -X POST http://localhost:3000/api/reviews \
   -H 'content-type: application/json' -d '{"prUrl":"https://github.com/<owner>/<repo>/pull/<n>"}'
 ```
 
-Open `http://localhost:3000/` for the reviews table. GitHub webhook setup is in
-[docs/code-review-setup.md](../../docs/code-review-setup.md).
+Open `http://localhost:3000/` for the reviews table.
 
 ## Deploy
 

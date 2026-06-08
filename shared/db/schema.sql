@@ -6,11 +6,17 @@ CREATE TABLE IF NOT EXISTS reviews (
   status        TEXT        NOT NULL DEFAULT 'pending',
   verdict       TEXT,
   reason        TEXT,
+  source        TEXT,
+  workflow      TEXT,
   input_tokens  INTEGER     NOT NULL DEFAULT 0,
   output_tokens INTEGER     NOT NULL DEFAULT 0,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Backfill columns on databases created before source/workflow existed.
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS source   TEXT;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS workflow TEXT;
 
 CREATE TABLE IF NOT EXISTS findings (
   id         SERIAL      PRIMARY KEY,

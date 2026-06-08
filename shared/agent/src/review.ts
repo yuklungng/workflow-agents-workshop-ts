@@ -12,7 +12,7 @@
 import { prepareDiff, type Patch } from './prepareDiff.js'
 import { filterDiff } from './filterDiff.js'
 import { selectReviewers, judge } from './agents.js'
-import type { RunContext, Tracer } from './types.js'
+import type { AgentResult, RunContext, TokenUsage, Tracer } from './types.js'
 
 export interface ReviewFinding {
   agent: string
@@ -31,7 +31,50 @@ export interface ReviewResult {
   patches: Patch[]
   reviews: ReviewFinding[]
   decision: ReviewDecision
-  usage: { inputTokens: number; outputTokens: number }
+  usage: TokenUsage
+}
+
+/**
+ * The flat summary a substrate persists and the viewer reads: the judge's
+ * verdict + reason, the reviewer notes, and the run's total token usage. Shared
+ * by `runReview` (naive/worker) and the workflow pattern so the only thing that
+ * differs between substrates is the fan-out itself — not this bookkeeping.
+ */
+export interface ReviewSummary {
+  verdict: string
+  reason: string
+  reviews: ReviewFinding[]
+  usage: TokenUsage
+}
+
+/** Add up the token usage across a set of agent results. */
+export function sumUsage(usages: TokenUsage[]): TokenUsage {
+  return usages.reduce(
+    (acc, u) => ({
+      inputTokens: acc.inputTokens + u.inputTokens,
+      outputTokens: acc.outputTokens + u.outputTokens,
+    }),
+    { inputTokens: 0, outputTokens: 0 },
+  )
+}
+
+/**
+ * Shape the reviewer results and the judge's output into a `ReviewSummary`:
+ * parse the verdict/reason, strip per-reviewer usage down to `{ agent, note }`,
+ * and total the tokens. This is the boilerplate every substrate would otherwise
+ * copy after its own fan-out.
+ */
+export function toReviewSummary(
+  reviews: Array<{ agent: string; note: string; usage: TokenUsage }>,
+  judgeResult: AgentResult,
+): ReviewSummary {
+  const decision = parseDecision(judgeResult.text)
+  return {
+    verdict: decision.verdict,
+    reason: decision.reason,
+    reviews: reviews.map(({ agent, note }) => ({ agent, note })),
+    usage: sumUsage([...reviews.map((r) => r.usage), judgeResult.usage]),
+  }
 }
 
 export type ReviewEvent =
@@ -97,13 +140,7 @@ export async function runReview(prUrl: string, options: RunReviewOptions = {}): 
     ctx,
   )
 
-  const usage = [...reviews.map((r) => r.usage), judgeResult.usage].reduce(
-    (acc, u) => ({
-      inputTokens: acc.inputTokens + u.inputTokens,
-      outputTokens: acc.outputTokens + u.outputTokens,
-    }),
-    { inputTokens: 0, outputTokens: 0 },
-  )
+  const usage = sumUsage([...reviews.map((r) => r.usage), judgeResult.usage])
 
   await emit({ type: 'phase', phase: 'done' })
 

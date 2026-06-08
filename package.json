@@ -23,7 +23,10 @@
     "test:worker": "AGENT_MODEL=mock node --import tsx --test \"tests/integration/worker-kv.test.ts\"",
     "naive:dev": "npm run dev --workspace @workshop/naive-agent",
     "worker:web": "npm run web --workspace @workshop/worker-agents",
-    "worker:worker": "npm run worker --workspace @workshop/worker-agents"
+    "worker:worker": "npm run worker --workspace @workshop/worker-agents",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -5,8 +5,8 @@
   "type": "module",
   "description": "worker-agents — the same agent, offloaded to background workers via a Valkey queue.",
   "scripts": {
-    "web": "node --env-file-if-exists=.env --import tsx src/web.ts",
-    "worker": "node --env-file-if-exists=.env --import tsx src/worker.ts",
+    "web": "node --env-file-if-exists=../../.env --env-file-if-exists=.env --import tsx src/web.ts",
+    "worker": "node --env-file-if-exists=../../.env --env-file-if-exists=.env --import tsx src/worker.ts",
     "start": "node --import tsx src/web.ts",
     "start:worker": "node --import tsx src/worker.ts",
     "typecheck": "tsc -p tsconfig.json"

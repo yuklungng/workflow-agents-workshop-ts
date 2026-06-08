@@ -36,12 +36,12 @@ falls back to a deterministic **mock** model so the full pipeline runs offline. 
 `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for real reviews (or force the mock with
 `AGENT_MODEL=mock`).
 
-Each app reads a `.env` in its own folder; start from the root example:
+Each app reads the root `.env` (Docker Compose loads it automatically; local
+`npm run *:dev` scripts load `../../.env` then a package `.env` override if present).
+Copy the example if you haven't:
 
 ```sh
-cp .env.example packages/naive-agent/.env
-cp .env.example packages/worker-agents/.env
-cp .env.example packages/workflow-agents/.env
+cp .env.example .env
 ```
 
 Local services (only what each pattern needs):
@@ -51,7 +51,21 @@ createdb agents_workshop        # Postgres — naive-agent & worker-agents
 redis-server &                  # Redis/Valkey — worker-agents only (or: docker run -p 6379:6379 redis)
 ```
 
-Then run any pattern:
+Or run **everything** (Postgres, Redis, and all three patterns) with Docker:
+
+```sh
+npm run docker:up               # builds and starts all services
+# Pattern 1 → http://localhost:3001
+# Pattern 2 → http://localhost:3002
+# Pattern 3 → http://localhost:3003  (Render workflow dev server on :8120)
+npm run docker:down             # stop and remove containers
+```
+
+Pattern 3 in Docker runs `scripts/docker-workflow-dev.sh`: the Render CLI dev server
+registers tasks on **:8120**, then the gateway on **:3003** dispatches through it.
+Trigger from the UI or: `render workflows tasks list --local` (from your host, against :8120).
+
+Then run any pattern **on the host** (without Docker):
 
 ```sh
 # Pattern 1 — in-process
@@ -63,8 +77,8 @@ npm run worker:worker           # terminal B — one worker
 npm run worker:worker           # terminal C — another worker
 
 # Pattern 3 — Render Workflows
-npm run dev --workspace @workshop/workflow-agents          # in-process tasks
-npm run dev:workflows --workspace @workshop/workflow-agents # each task in its own container
+npm run dev --workspace @workshop/workflow-agents          # fast in-process shortcut
+npm run dev:workflows --workspace @workshop/workflow-agents # Render CLI dev server (host)
 ```
 
 Open `http://localhost:3000/` for the shared telemetry viewer, paste a public PR URL,
@@ -78,8 +92,8 @@ The guided walkthrough lives in [`docs/`](docs) and is meant to be followed in o
 * [`docs/01-naive-agent.md`](docs/01-naive-agent.md) — Pattern 1: the in-process baseline and where it breaks
 * [`docs/02-worker-agents.md`](docs/02-worker-agents.md) — Pattern 2: queue + worker; **hand-write the ack/retry semantics** in `kv.ts`
 * [`docs/03-workflow-agents.md`](docs/03-workflow-agents.md) — Pattern 3: the same fan-out as declarative Render tasks
-* [`docs/04-author-a-task.md`](docs/04-author-a-task.md) — the hands-on finale: explore the `your-review` sandbox and compose agents as tasks
-* [`docs/code-review-setup.md`](docs/code-review-setup.md) — reference for the `code-review` workflow, GitHub webhooks, and agent roles
+* [`docs/04-author-a-task.md`](docs/04-author-a-task.md) — the hands-on finale: explore the `your-review` sandbox, compose agents as tasks, plus **bonus points** (reflection loop, MCP tool, HITL gate)
+* [`docs/05-future-iterations.md`](docs/05-future-iterations.md) — where to go for production: eval harness, guardrails, circuit breakers, observability deep-dives
 
 The two interactive beats:
 
@@ -101,7 +115,7 @@ shared/
   agent/            @workshop/agent — the constant: LLM loop, model client, agents, runReview
   db/               @workshop/db — telemetry store (Postgres or in-memory): reviews / findings / spans
   ui/               @workshop/ui — mountable Hono telemetry viewer shared by all three
-docs/               guided walkthrough (00–04 + code-review-setup)
+docs/               guided walkthrough (00–05)
 facilitator/        facilitator notes and exercise solutions
 tests/              unit / integration / e2e (run against the mock model)
 ```
@@ -139,9 +153,6 @@ curl -s -X POST http://localhost:3000/api/reviews \
   -d '{"prUrl":"https://github.com/octocat/Hello-World/pull/9681"}'
 ```
 
-GitHub webhook wiring (signature verification, events handled, env vars) is documented in
-[`docs/code-review-setup.md`](docs/code-review-setup.md).
-
 ## Deploying to Render
 
 Each pattern ships its own Blueprint:
@@ -168,8 +179,9 @@ All patterns read the same env (copy [`.env.example`](.env.example) into each pa
 | `GITHUB_TOKEN` | all | optional; raises rate limits / enables private-repo diffs |
 | `GITHUB_WEBHOOK_SECRET` | workflow-agents | HMAC secret for webhook verification |
 | `WORKFLOW_API_KEY` | workflow-agents | bearer token protecting `/api/reviews` and `/webhooks/*` |
-| `RENDER_USE_LOCAL_DEV` | workflow-agents | `true` runs tasks in-process for local dev |
-| `RENDER_API_KEY` | workflow-agents | required in production for Workflow dispatch |
+| `RENDER_USE_LOCAL_DEV` | workflow-agents | `true` for local dev; without `RENDER_LOCAL_DEV_URL`, runs in-process |
+| `RENDER_LOCAL_DEV_URL` | workflow-agents | when set (Docker / `dev:workflows`), SDK dispatches to Render CLI dev server |
+| `RENDER_API_KEY` | workflow-agents | required in production; Docker local dev uses `local-dev` |
 
 ## Testing
 
