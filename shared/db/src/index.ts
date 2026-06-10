@@ -12,7 +12,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import pg from 'pg'
-import type { SpanInfo, SpanOutcome, Tracer } from '@workshop/agent'
+import type { ReviewSummary, SpanInfo, SpanOutcome, Tracer } from '@workshop/agent'
 import * as mem from './memory.js'
 import type { FindingRow, ReviewMeta, ReviewResultUpdate, ReviewRow, SpanRow } from './types.js'
 
@@ -132,6 +132,36 @@ export async function getFindings(reviewId: string, pool?: PgPool): Promise<Find
   return rows
 }
 
+/**
+ * Persist a completed review in one place: one finding per reviewer, the judge's
+ * decision as its own finding, and the flat result row (verdict, reason, tokens).
+ *
+ * All three substrates (naive, worker, workflow) call this with the same
+ * `ReviewSummary`, so the persistence is identical and only the fan-out differs.
+ */
+export async function persistReview(
+  reviewId: string,
+  summary: ReviewSummary,
+  pool?: PgPool,
+): Promise<void> {
+  for (const finding of summary.reviews) {
+    await addFinding(reviewId, finding.agent, finding.note, pool)
+  }
+  // Surface the judge's decision as its own finding alongside the specialists.
+  await addFinding(reviewId, 'judge', summary.reason || summary.verdict, pool)
+  await setReviewResult(
+    reviewId,
+    {
+      status: 'done',
+      verdict: summary.verdict,
+      reason: summary.reason,
+      inputTokens: summary.usage.inputTokens,
+      outputTokens: summary.usage.outputTokens,
+    },
+    pool,
+  )
+}
+
 // ── Spans (telemetry) ────────────────────────────────────────────────────────
 
 export async function getSpans(runId: string, pool?: PgPool): Promise<SpanRow[]> {
@@ -145,38 +175,63 @@ export async function getSpans(runId: string, pool?: PgPool): Promise<SpanRow[]>
 }
 
 /**
+ * A Tracer plus a `flush()` that awaits any in-flight span writes. Span writes
+ * are fired without awaiting (so telemetry never adds latency to a run), which is
+ * fine for long-lived web/worker processes. A short-lived process — notably a
+ * Render Workflow task container — can exit before those writes land, so call
+ * `flush()` before returning from a task. No-op for the in-memory backend.
+ */
+export interface FlushableTracer extends Tracer {
+  flush(): Promise<void>
+}
+
+/**
  * A Tracer that writes spans to the active backend. Best-effort: failures are
  * logged and swallowed so telemetry never breaks a run. Pass to runReview.
  */
-export function storeTracer(pool?: PgPool): Tracer {
-  if (!usePg(pool)) return mem.storeTracer()
+export function storeTracer(pool?: PgPool): FlushableTracer {
+  if (!usePg(pool)) {
+    return { ...mem.storeTracer(), flush: async () => {} }
+  }
   const active = pool ?? getPool()
   const fail = (err: unknown) => console.warn('[db] span write failed:', err)
+  const pending = new Set<Promise<unknown>>()
+  const track = (p: Promise<unknown>) => {
+    pending.add(p)
+    void p.finally(() => pending.delete(p))
+  }
   return {
     onStart(span: SpanInfo, input: unknown) {
-      active
-        .query(
-          `INSERT INTO spans (span_id, run_id, parent_span_id, name, kind, status, input)
-           VALUES ($1, $2, $3, $4, $5, 'running', $6)
-           ON CONFLICT (span_id) DO NOTHING`,
-          [span.spanId, span.runId, span.parentSpanId ?? null, span.name, span.kind, toJson(input)],
-        )
-        .catch(fail)
+      track(
+        active
+          .query(
+            `INSERT INTO spans (span_id, run_id, parent_span_id, name, kind, status, input)
+             VALUES ($1, $2, $3, $4, $5, 'running', $6)
+             ON CONFLICT (span_id) DO NOTHING`,
+            [span.spanId, span.runId, span.parentSpanId ?? null, span.name, span.kind, toJson(input)],
+          )
+          .catch(fail),
+      )
     },
     onEnd(span: SpanInfo, outcome: SpanOutcome) {
-      active
-        .query(
-          `UPDATE spans
-             SET status = $2, output = $3, error = $4, ended_at = NOW()
-           WHERE span_id = $1`,
-          [
-            span.spanId,
-            outcome.ok ? 'ok' : 'error',
-            outcome.ok ? toJson(outcome.output) : null,
-            outcome.ok ? null : outcome.error,
-          ],
-        )
-        .catch(fail)
+      track(
+        active
+          .query(
+            `UPDATE spans
+               SET status = $2, output = $3, error = $4, ended_at = NOW()
+             WHERE span_id = $1`,
+            [
+              span.spanId,
+              outcome.ok ? 'ok' : 'error',
+              outcome.ok ? toJson(outcome.output) : null,
+              outcome.ok ? null : outcome.error,
+            ],
+          )
+          .catch(fail),
+      )
+    },
+    async flush() {
+      await Promise.allSettled([...pending])
     },
   }
 }

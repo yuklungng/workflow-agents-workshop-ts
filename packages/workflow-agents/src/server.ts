@@ -14,7 +14,7 @@ import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { addFinding, createReview, migrate, setReviewResult } from "@workshop/db";
+import { createReview, migrate, persistReview, setReviewResult } from "@workshop/db";
 import { createUiRouter } from "@workshop/ui";
 import { loadWorkflows } from "./workflows/loader.js";
 import { matchPullRequest, verifyGithubSignature } from "./github.js";
@@ -90,34 +90,30 @@ export async function createApp(): Promise<Hono> {
           _runId: reviewId,
         })) as CodeReviewResult & Record<string, unknown>;
 
-        for (const f of result.reviews ?? []) await addFinding(reviewId, f.agent, f.note);
-
-        // Persist the judge's decision as its own finding so it shows up next to
-        // the specialist reviewers in the viewer (otherwise it only lives in the
-        // review summary + the judge span's output).
-        if (result.reason || result.verdict) {
-          await addFinding(reviewId, "judge", result.reason ?? result.verdict ?? "");
+        // A code-review-style result (reviewer notes + a verdict) persists through
+        // the shared helper — identical to the naive and worker patterns. Other
+        // authored workflows (e.g. your-review) may return arbitrary output, so
+        // surface it as the reason rather than forcing it into a review shape.
+        if (Array.isArray(result.reviews) && typeof result.verdict === "string") {
+          await persistReview(reviewId, {
+            verdict: result.verdict,
+            reason: result.reason ?? "",
+            reviews: result.reviews,
+            usage: result.usage ?? { inputTokens: 0, outputTokens: 0 },
+          });
+        } else {
+          await setReviewResult(reviewId, {
+            status: "done",
+            ...(result.verdict ? { verdict: result.verdict } : {}),
+            reason: result.reason ?? JSON.stringify(result, null, 2),
+            ...(result.usage
+              ? {
+                  inputTokens: result.usage.inputTokens,
+                  outputTokens: result.usage.outputTokens,
+                }
+              : {}),
+          });
         }
-
-        // Workflows that don't return a verdict (e.g. an authored your-review)
-        // still get their raw output surfaced as the reason so the viewer shows
-        // something useful rather than an empty row.
-        const isReviewSummary =
-          result.verdict != null || result.reason != null || result.reviews != null;
-        const reason =
-          result.reason ?? (isReviewSummary ? undefined : JSON.stringify(result, null, 2));
-
-        await setReviewResult(reviewId, {
-          status: "done",
-          ...(result.verdict ? { verdict: result.verdict } : {}),
-          ...(reason ? { reason } : {}),
-          ...(result.usage
-            ? {
-                inputTokens: result.usage.inputTokens,
-                outputTokens: result.usage.outputTokens,
-              }
-            : {}),
-        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[workflow-agents] review ${reviewId} failed:`, message);
@@ -129,15 +125,15 @@ export async function createApp(): Promise<Hono> {
 
   const app = new Hono();
 
-  // API-key auth for the review + webhook write paths. Open when WORKFLOW_API_KEY
-  // is unset. (Reads — the viewer and its APIs — are always open.)
+  // Auth is per-route, because the two write paths authenticate differently:
+  //   - /api/reviews  → bearer token (WORKFLOW_API_KEY), for first-party callers.
+  //   - /webhooks/github → HMAC signature (GITHUB_WEBHOOK_SECRET), checked inside
+  //     the handler. GitHub signs the body; it never sends a bearer token, so the
+  //     API key must NOT gate the webhook or real deliveries would 401.
+  // Reads (the viewer and its APIs) are always open.
   const apiKey = process.env.WORKFLOW_API_KEY;
   if (apiKey) {
     const expected = `Bearer ${apiKey}`;
-    app.use("/webhooks/*", async (c, next) => {
-      if (c.req.header("authorization") === expected) return next();
-      return c.json({ error: "unauthorized" }, 401);
-    });
     app.use("/api/reviews", async (c, next) => {
       if (c.req.method !== "POST") return next();
       if (c.req.header("authorization") === expected) return next();

@@ -50,9 +50,18 @@ export interface RunLoopResult {
 }
 
 export async function runLoop(args: RunLoopArgs): Promise<RunLoopResult> {
-  const { client, tools, signal, logger, env } = args
+  const { client, tools, logger, env } = args
   const maxIterations = args.budget?.maxIterations ?? DEFAULT_MAX_ITERATIONS
   const maxTokens = args.budget?.maxTokens ?? DEFAULT_MAX_TOKENS
+  const maxWallSeconds = args.budget?.maxWallSeconds
+  const deadline = maxWallSeconds ? Date.now() + maxWallSeconds * 1000 : undefined
+
+  // Combine the caller's abort signal with a wall-clock timeout so a hung model
+  // call is actually interrupted mid-flight — not just noticed between iterations.
+  // Without a budget the behavior is unchanged (just the caller's signal).
+  const signal = maxWallSeconds
+    ? AbortSignal.any([args.signal, AbortSignal.timeout(maxWallSeconds * 1000)])
+    : args.signal
 
   const byName = new Map(tools.map((t) => [t.name, t]))
   const schemas = exposedSchemas(tools, args.permissions)
@@ -66,6 +75,9 @@ export async function runLoop(args: RunLoopArgs): Promise<RunLoopResult> {
 
   for (let iter = 0; iter < maxIterations; iter++) {
     throwIfAborted(signal)
+    if (deadline && Date.now() > deadline) {
+      throw new Error(`wall-clock budget exhausted (${maxWallSeconds}s)`)
+    }
     if (usage.inputTokens + usage.outputTokens >= maxTokens) {
       throw new Error(`token budget exhausted (${maxTokens})`)
     }

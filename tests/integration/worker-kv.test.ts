@@ -15,6 +15,7 @@ import {
   ensureGroup,
   enqueueReview,
   processEntry,
+  reclaimStale,
 } from '../../packages/worker-agents/src/kv.js'
 
 const REDIS_URL = process.env.REDIS_URL
@@ -79,5 +80,35 @@ describe('kv.processEntry ack semantics', { skip: !REDIS_URL }, () => {
     })
 
     assert.equal(await pendingCount(), 1) // un-acked → still pending → will retry
+  })
+
+  it('redelivers a pending message via reclaimStale until it succeeds', async () => {
+    // Isolate from the prior cases' pending entries so the reclaim count is exact.
+    await client.del(STREAM)
+    await ensureGroup(client)
+    await enqueueReview({ reviewId: 'r-retry', prUrl: 'https://github.com/o/r/pull/3' })
+
+    // First delivery fails, leaving the entry pending (un-acked).
+    const entry = await readOne('consumer-a')
+    assert.ok(entry, 'expected a delivered entry')
+    await processEntry(client, entry.id, entry.fields, async () => {
+      throw new Error('boom')
+    })
+    assert.equal(await pendingCount(), 1)
+
+    // A reclaim pass (minIdle 0) hands the stale entry to another consumer and
+    // re-runs it. This time the handler succeeds, so it gets acked.
+    let redelivered = false
+    const claimed = await reclaimStale(
+      client,
+      async () => {
+        redelivered = true
+      },
+      { consumerName: 'consumer-b', minIdleMs: 0 },
+    )
+
+    assert.equal(claimed, 1) // the pending entry was reclaimed
+    assert.equal(redelivered, true) // and actually re-processed
+    assert.equal(await pendingCount(), 0) // success → acked → no longer pending
   })
 })

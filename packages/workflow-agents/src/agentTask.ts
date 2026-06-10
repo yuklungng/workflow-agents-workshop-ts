@@ -28,10 +28,18 @@ export function agentTask(agent: Agent): AgentTaskRun {
       ...(agent.budget?.maxWallSeconds ? { timeoutSeconds: agent.budget.maxWallSeconds } : {}),
     },
     async function agentRun(input: AgentInput, runId?: string): Promise<AgentResult> {
-      return agent.run(input, {
-        tracer: storeTracer(),
-        ...(runId ? { runId } : {}),
-      });
+      // Each task runs in its own (possibly short-lived) container, so flush span
+      // writes before returning — otherwise the instance can be deprovisioned
+      // before the best-effort writes land.
+      const tracer = storeTracer();
+      try {
+        return await agent.run(input, {
+          tracer,
+          ...(runId ? { runId } : {}),
+        });
+      } finally {
+        await tracer.flush();
+      }
     },
   );
 }

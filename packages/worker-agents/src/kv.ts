@@ -13,6 +13,14 @@ import { Redis } from 'ioredis'
 export const STREAM = 'reviews:queue'
 export const GROUP = 'reviewers'
 
+/**
+ * How long a delivered-but-un-acked entry must sit idle before another consumer
+ * may reclaim it. This is what turns "leave it un-acked" into an actual retry:
+ * `XREADGROUP >` only ever delivers *new* messages, so a failed entry would stay
+ * pending forever without a reclaim pass.
+ */
+export const RECLAIM_IDLE_MS = 30_000
+
 export interface ReviewJob {
   reviewId: string
   prUrl: string
@@ -90,6 +98,45 @@ export async function processEntry(
 export interface ConsumeOptions {
   consumerName?: string
   signal?: AbortSignal
+  /** Override the idle threshold before a pending entry is reclaimed (ms). */
+  reclaimIdleMs?: number
+}
+
+export interface ReclaimOptions {
+  consumerName?: string
+  /** Minimum idle time (ms) before an entry is eligible to be reclaimed. */
+  minIdleMs?: number
+  /** Max entries to reclaim per call. */
+  count?: number
+}
+
+/**
+ * Reclaim entries that were delivered to some consumer but never acked (a handler
+ * crashed, a worker died) and re-run them through `processEntry`. This is the
+ * other half of at-least-once delivery: `processEntry` decides *whether* to ack;
+ * this is what actually re-delivers an entry that wasn't. Returns how many
+ * entries were reclaimed and re-processed.
+ */
+export async function reclaimStale(
+  client: Redis,
+  handler: (job: ReviewJob) => Promise<void>,
+  options: ReclaimOptions = {},
+): Promise<number> {
+  const consumer = options.consumerName ?? `worker-${process.pid}`
+  const minIdle = options.minIdleMs ?? RECLAIM_IDLE_MS
+  const count = options.count ?? 10
+
+  // XAUTOCLAIM (Redis 6.2+) atomically finds pending entries idle longer than
+  // minIdle and transfers ownership to `consumer`, returning them to us.
+  const res = (await client.xautoclaim(STREAM, GROUP, consumer, minIdle, '0', 'COUNT', count)) as
+    | [string, Array<[string, string[]]>, string[]]
+    | null
+
+  const entries = res?.[1] ?? []
+  for (const [id, fields] of entries) {
+    await processEntry(client, id, fields, handler)
+  }
+  return entries.length
 }
 
 /**
@@ -101,10 +148,20 @@ export async function consumeReviews(
   options: ConsumeOptions = {},
 ): Promise<void> {
   const consumer = options.consumerName ?? `worker-${process.pid}`
+  const reclaimIdleMs = options.reclaimIdleMs ?? RECLAIM_IDLE_MS
   const client = new Redis(url(), { maxRetriesPerRequest: null })
   await ensureGroup(client)
 
   while (!options.signal?.aborted) {
+    // First reclaim anything a previous run failed on and left pending, then read
+    // new work. Without this, an un-acked entry is never redelivered.
+    await reclaimStale(client, handler, {
+      consumerName: consumer,
+      minIdleMs: reclaimIdleMs,
+    }).catch((err) => {
+      console.error('[worker-agents:worker] reclaim failed:', err)
+    })
+
     const response = (await client.xreadgroup(
       'GROUP',
       GROUP,

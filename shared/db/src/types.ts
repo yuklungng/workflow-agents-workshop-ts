@@ -23,7 +23,12 @@ export interface ReviewMeta {
 }
 
 export interface ReviewResultUpdate {
-  status: 'done' | 'error'
+  /**
+   * `done`/`error` are terminal; `queued` means a worker failed but left the job
+   * un-acked for reclaim/retry (so the row reflects "back in the queue", not a
+   * terminal failure).
+   */
+  status: 'done' | 'error' | 'queued'
   verdict?: string
   reason?: string
   inputTokens?: number

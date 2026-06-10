@@ -10,7 +10,7 @@
  * the queue, consumer groups, acks, retry-on-failure, and progress plumbing.
  */
 import { runReview } from '@workshop/agent'
-import { addFinding, migrate, setReviewResult, storeTracer } from '@workshop/db'
+import { migrate, persistReview, setReviewResult, storeTracer } from '@workshop/db'
 import { consumeReviews, publishProgress } from './kv.js'
 
 const controller = new AbortController()
@@ -29,23 +29,14 @@ await consumeReviews(
         tracer: storeTracer(),
         onEvent: (event) => publishProgress(job.reviewId, event),
       })
-      for (const finding of result.reviews) {
-        await addFinding(job.reviewId, finding.agent, finding.note)
-      }
-      // Surface the judge's decision as its own finding alongside the specialists.
-      await addFinding(job.reviewId, 'judge', result.decision.reason || result.decision.verdict)
-      await setReviewResult(job.reviewId, {
-        status: 'done',
-        verdict: result.decision.verdict,
-        reason: result.decision.reason,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      })
+      await persistReview(job.reviewId, result.summary)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      await setReviewResult(job.reviewId, { status: 'error', reason: message })
+      // The entry stays un-acked and will be reclaimed + retried (see kv.ts
+      // reclaimStale), so this isn't terminal — mark it queued rather than error.
+      await setReviewResult(job.reviewId, { status: 'queued', reason: message })
       await publishProgress(job.reviewId, { type: 'error', message })
-      throw err // leave the message un-acked so the queue can retry it
+      throw err // leave the message un-acked so the queue can reclaim/retry it
     }
   },
   { signal: controller.signal },

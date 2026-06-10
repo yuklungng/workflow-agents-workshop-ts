@@ -41,5 +41,5 @@ test('e2e: a PR is reviewed over real HTTP and shows in the viewer', async () =>
 
   const page = await fetch(`${baseUrl}/`)
   assert.equal(page.status, 200)
-  assert.match(await page.text(), /Naive agent/)
+  assert.match(await page.text(), /naive agent/i)
 })

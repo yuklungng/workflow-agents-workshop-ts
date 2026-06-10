@@ -12,13 +12,7 @@ import { pathToFileURL } from 'node:url'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { runReview } from '@workshop/agent'
-import {
-  addFinding,
-  createReview,
-  migrate,
-  setReviewResult,
-  storeTracer,
-} from '@workshop/db'
+import { createReview, migrate, persistReview, setReviewResult, storeTracer } from '@workshop/db'
 import { createUiRouter } from '@workshop/ui'
 
 /** Build the Hono app. Exported so tests can drive it via `app.fetch`. */
@@ -36,19 +30,8 @@ export function createApp(): Hono {
     // The naive part: we run the whole review here and block until it's done.
     try {
       const result = await runReview(body.prUrl, { runId: id, tracer: storeTracer() })
-      for (const finding of result.reviews) {
-        await addFinding(id, finding.agent, finding.note)
-      }
-      // Surface the judge's decision as its own finding alongside the specialists.
-      await addFinding(id, 'judge', result.decision.reason || result.decision.verdict)
-      await setReviewResult(id, {
-        status: 'done',
-        verdict: result.decision.verdict,
-        reason: result.decision.reason,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      })
-      return c.json({ id, verdict: result.decision.verdict })
+      await persistReview(id, result.summary)
+      return c.json({ id, verdict: result.summary.verdict })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       await setReviewResult(id, { status: 'error', reason: message })

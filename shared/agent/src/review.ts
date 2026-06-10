@@ -32,6 +32,12 @@ export interface ReviewResult {
   reviews: ReviewFinding[]
   decision: ReviewDecision
   usage: TokenUsage
+  /**
+   * The flat, persist-ready shape (verdict + reason + reviews + usage). Every
+   * substrate persists *this* via `persistReview`, so the bookkeeping is shared
+   * and only the fan-out differs between patterns.
+   */
+  summary: ReviewSummary
 }
 
 /**
@@ -140,16 +146,19 @@ export async function runReview(prUrl: string, options: RunReviewOptions = {}): 
     ctx,
   )
 
-  const usage = sumUsage([...reviews.map((r) => r.usage), judgeResult.usage])
-
   await emit({ type: 'phase', phase: 'done' })
+
+  // One summarization path, shared with the workflow pattern: parse the verdict,
+  // flatten reviewer notes, and total the tokens.
+  const summary = toReviewSummary(reviews, judgeResult)
 
   return {
     prUrl,
     patches,
-    reviews: reviews.map(({ agent, note }) => ({ agent, note })),
+    reviews: summary.reviews,
     decision: parseDecision(judgeResult.text),
-    usage,
+    usage: summary.usage,
+    summary,
   }
 }
 
