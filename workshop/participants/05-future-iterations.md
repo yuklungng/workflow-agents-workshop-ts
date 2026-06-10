@@ -1,5 +1,9 @@
 # 05 — Future iterations (beyond the workshop)
 
+> **Take-home.** The facilitator will point you here during the close (~10 min).
+> Nothing in this doc is implemented — it's the production road map, framed as
+> "more steps, tasks, budgets, and tracers. Still the same agent."
+
 > The workshop ends at a durable, traced, multi-agent reviewer. Shipping that to
 > production is a different project. This doc captures the four most common next
 > steps — **evals, guardrails, circuit breakers, and deeper observability** — and,

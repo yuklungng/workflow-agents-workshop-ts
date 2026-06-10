@@ -64,18 +64,30 @@ export default task(
 
 // ── Ideas to explore ────────────────────────────────────────────────────────
 //
-// Compose a single agent as its own task:
+// Compose a single agent as its own task (inline — no wrapper needed):
 //
+//   import { task } from "@renderinc/sdk/workflows";
 //   import { securityReviewer } from "@workshop/agent";
-//   import { agentTask } from "../../agentTask.js";
-//   const securityTask = agentTask(securityReviewer);
+//   import { storeTracer } from "@workshop/db";
+//
+//   const securityTask = task(
+//     { name: "security", timeoutSeconds: 120 },
+//     async (input: { patches: Patch[] }, runId?: string) => {
+//       return securityReviewer.run(input, { tracer: storeTracer(), runId });
+//     },
+//   );
 //   const review = await securityTask({ patches: filtered.patches });
 //
 // Fan out all always-on reviewers:
 //
 //   import { REVIEWERS } from "@workshop/agent";
 //   const reviews = await Promise.all(
-//     REVIEWERS.map((agent) => agentTask(agent)({ patches: filtered.patches })),
+//     REVIEWERS.map((agent) =>
+//       task(
+//         { name: agent.name },
+//         async (input: { patches: Patch[] }) => agent.run(input, { tracer: storeTracer() }),
+//       )({ patches: filtered.patches }),
+//     ),
 //   );
 //
 // Add a verdict with the judge (see code-review/index.ts for the full pipeline).

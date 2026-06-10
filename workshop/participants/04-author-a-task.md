@@ -1,5 +1,10 @@
 # 04 — Author a task (the hands-on finale)
 
+> **Session 2 — Lab 2 (~25 min).** This is the highest-value segment and the
+> reason for everything before it. Coding agents are welcome — the `task()` API
+> is small enough that they reason about it directly. Steps 1–3 are the core;
+> 4–5 are stretch goals. Bonus points at the bottom are take-home challenges.
+
 > This is the half where coding agents come out. Open `your-review` and treat it
 > as a sandbox — extend it however you like. The API is small enough that an agent
 > reasons about it trivially. (In Session 1 you hand-wrote the worker's acks. Here,
@@ -42,7 +47,7 @@ plain function — no `task()` needed.
 
 ## Your turn
 
-Open [`packages/workflow-agents/src/workflows/your-review/index.ts`](../packages/workflow-agents/src/workflows/your-review/index.ts).
+Open [`packages/workflow-agents/src/workflows/your-review/index.ts`](../../packages/workflow-agents/src/workflows/your-review/index.ts).
 It's a working sandbox that fetches a PR and returns an overview. Explore from
 there. The file ends with commented ideas, not a prescribed fill-in.
 
@@ -70,10 +75,16 @@ discovered it because the folder exists and exports a task.
 Pick one reviewer and run it as its own isolated task. Example — security:
 
 ```ts
+import { task } from "@renderinc/sdk/workflows";
 import { securityReviewer } from "@workshop/agent";
-import { agentTask } from "../../agentTask.js";
+import { storeTracer } from "@workshop/db";
 
-const securityTask = agentTask(securityReviewer);
+const securityTask = task(
+  { name: "security", timeoutSeconds: 120 },
+  async (input: { patches: Patch[] }, runId?: string) => {
+    return securityReviewer.run(input, { tracer: storeTracer(), runId });
+  },
+);
 
 // inside yourReview, after you have `filtered.patches`:
 const review = await securityTask({ patches: filtered.patches });
@@ -101,14 +112,18 @@ Swap the single reviewer for both, in parallel:
 
 ```ts
 import { REVIEWERS } from "@workshop/agent";
-const reviewerTasks = REVIEWERS.map(agentTask);
 const reviews = await Promise.all(
-  reviewerTasks.map((run) => run({ patches: filtered.patches })),
+  REVIEWERS.map((agent) =>
+    task(
+      { name: agent.name },
+      async (input: { patches: Patch[] }) => agent.run(input, { tracer: storeTracer() }),
+    )({ patches: filtered.patches }),
+  ),
 );
 ```
 
 That's the same fan-out as the built-in `code-review` workflow. Compare your file
-to [`code-review/index.ts`](../packages/workflow-agents/src/workflows/code-review/index.ts).
+to [`code-review/index.ts`](../../packages/workflow-agents/src/workflows/code-review/index.ts).
 
 ### 5. Ship it live
 
@@ -157,19 +172,28 @@ over/under-reactions.
 
 **How it works here:** a reflection loop is just *calling the same task again with
 its previous output fed back in*. In a queue you'd hand-roll the re-enqueue. As a
-task it's a `for` loop over `agentTask(judge)`.
+task it's a `for` loop over a `judgeTask`.
 
 **Build it** in `your-review` (building on the fan-out from step 4):
 
 ```ts
+import { task } from "@renderinc/sdk/workflows";
 import { REVIEWERS, judge, parseDecision } from "@workshop/agent";
-import { agentTask } from "../../agentTask.js";
+import { storeTracer } from "@workshop/db";
 
-const judgeTask = agentTask(judge);
+const judgeTask = task(
+  { name: "judge", timeoutSeconds: 120 },
+  async (input: Record<string, unknown>) => judge.run(input, { tracer: storeTracer() }),
+);
 
 // Fan out reviewers, then pair each result with its agent name for the judge.
 const results = await Promise.all(
-  REVIEWERS.map((agent) => agentTask(agent)({ patches: filtered.patches })),
+  REVIEWERS.map((agent) =>
+    task(
+      { name: agent.name },
+      async (input: { patches: Patch[] }) => agent.run(input, { tracer: storeTracer() }),
+    )({ patches: filtered.patches }),
+  ),
 );
 const findings = REVIEWERS.map((agent, i) => ({ agent: agent.name, note: results[i].text }));
 

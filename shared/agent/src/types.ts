@@ -34,25 +34,6 @@ export interface Budget {
   maxWallSeconds?: number
 }
 
-/**
- * Optional substrate execution settings, forwarded as-is to whatever runs the
- * agent. Framework-neutral by design: a substrate honors the fields it supports
- * (e.g. Render Workflows maps these straight onto a `task()` config) and ignores
- * the rest. Kept here so an agent can declare its own retry/timeout/compute
- * intent without coupling the shared core to any one runner.
- */
-export interface TaskSettings {
-  /** Hard wall-clock timeout for a single run, in seconds. */
-  timeoutSeconds?: number
-  /** Retry policy for a failed run. */
-  retry?: {
-    maxRetries: number
-    waitDurationMs: number
-    backoffScaling?: number
-  }
-  /** Compute size / instance plan, when the substrate provisions per-run. */
-  plan?: string
-}
 
 export type ContentBlock =
   | { type: 'text'; text: string }
@@ -187,8 +168,6 @@ export interface AgentDefinition {
   budget?: Budget
   sampling?: SamplingParams
   permissions?: Permissions
-  /** Substrate execution settings (retry, timeout, compute), forwarded as-is. */
-  task?: TaskSettings
 }
 
 export interface AgentResult {

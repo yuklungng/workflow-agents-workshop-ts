@@ -1,11 +1,15 @@
 # 03 — Workflow agents (Render Workflows)
 
+> **Session 2 — Module 3 (~20 min).** Welcome back from break. Everything you
+> hand-rolled in Lab 1 — the queue, the acks, the retries — is about to become
+> a config object. This pattern builds to the hands-on finale,
+> [04 — Author a task](04-author-a-task.md).
+
 > The same fan-out, expressed as Render tasks. The queue, retries, coordination,
 > and observability you hand-rolled in worker-agents are now declarative — and the
 > unit you author is just a **task**: a plain async function + a config object.
-> This pattern builds to the hands-on section, [04 — Author a task](04-author-a-task.md).
 
-Lives in [`packages/workflow-agents`](../packages/workflow-agents).
+Lives in [`packages/workflow-agents`](../../packages/workflow-agents).
 
 ## The shape
 
@@ -138,7 +142,7 @@ render workflows start code-review --local \
 ## Trigger from a public repo (dummy inbound)
 
 The GitHub webhook adapter
-([`src/github.ts`](../packages/workflow-agents/src/github.ts))
+([`src/github.ts`](../../packages/workflow-agents/src/github.ts))
 maps `pull_request` events onto the `code-review` task. Point a public repo's
 webhook (or a manual "Trigger Run") at the deployed service to review real PRs.
 
@@ -152,18 +156,22 @@ webhook (or a manual "Trigger Run") at the deployed service to review real PRs.
 ## Same agents as naive-agent and worker-agents
 
 This package consumes `@workshop/agent` directly — the **same** `REVIEWERS` and
-`judge` the naive and worker patterns run. The only Pattern-3-specific code is
-[`src/agentTask.ts`](../packages/workflow-agents/src/agentTask.ts):
+`judge` the naive and worker patterns run. Each agent is wrapped in a `task()`
+call directly in
+[`code-review/index.ts`](../../packages/workflow-agents/src/workflows/code-review/index.ts) —
+no wrapper file, no factory:
 
 ```ts
-// the entire difference between workflow-agents and naive-agent/worker-agents:
-task(agent.name, (input, runId?) => agent.run(input, { tracer, runId }))
+const securityTask = task(
+  { name: "security", timeoutSeconds: 120, retry: { maxRetries: 2 } },
+  async (input, runId?) => securityReviewer.run(input, { tracer: storeTracer(), runId }),
+);
 ```
 
 `agent.run()` is identical everywhere. Wrapping it in `task()` is what buys
 per-agent isolation, retries, and traces. The agents are the plain `defineAgent`
-objects from the shared package, and workflows (along with the per-agent tasks
-they register) are auto-discovered by `loader.ts` — no manual registration.
+objects from the shared package, and workflows are auto-discovered by
+`loader.ts` — no manual registration.
 
 Tools and MCP also come from the shared registry, so adding a tool or an MCP
 server (`defineMcpSource`) makes it available to all three patterns at once.

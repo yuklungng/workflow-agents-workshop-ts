@@ -22,9 +22,9 @@ code-review (Render task)
 - **Render primitives:** Web Service + **Workflows** + Postgres.
 - **What it unlocks:** managed queuing, retries/backoff, per-task compute, parallel
   fan-out, and full traces in the Render Dashboard — none of which you write.
-- **What you now own:** nothing. [`src/agentTask.ts`](src/agentTask.ts), which wraps
-  a shared `Agent` as a `task()`, is the entire bridge; everything else is the plain
-  TypeScript shared with the other patterns.
+- **What you now own:** nothing. Each agent is wrapped in a `task()` call directly
+  in the workflow file — no bridge module, no factory. Everything else is the
+  plain TypeScript shared with the other patterns.
 
 ## Architecture
 
@@ -81,7 +81,6 @@ Postgres — then create the Workflow service in the Render Dashboard (see
 src/
   server.ts          gateway entry (Hono web host)
   workflow.ts        workflow service entry (task registration only)
-  agentTask.ts       wrap a shared Agent as a Render task()
   github.ts          GitHub webhook verify + match
   workflows/
     loader.ts        workflow auto-discovery
@@ -105,7 +104,7 @@ src/
 | `RENDER_USE_LOCAL_DEV` | `true` runs tasks in-process (local dev) |
 | `DATABASE_URL` | Postgres for durable runs; falls back to in-memory |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | Optional; mock model if absent |
-| `WORKFLOW_API_KEY` | Bearer token protecting `POST /api/reviews` and `/webhooks/*` (open when unset) |
+| `WORKFLOW_API_KEY` | Bearer token protecting `POST /api/reviews` (open when unset) |
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret for webhook verification |
 | `GITHUB_TOKEN` | Raises GitHub rate limits / enables private-repo diffs |
 | `RENDER_API_KEY` | Required in production for Workflow dispatch |

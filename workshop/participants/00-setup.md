@@ -1,26 +1,51 @@
-# 00 — Setup - TODO - UPDATE WITH LATEST INSTRUCTIONS
+# 00 — Setup
+
+> **Module 0 (~10 min).** Complete this before the first lab. The facilitator
+> will walk through setup live, but finishing early means more time for coding.
 
 This workshop starts on Render. Local development is available for tests,
 debugging, and the worker ack exercise.
 
 ## Prerequisites
 
-- A Render account
-- A fork or writable copy of this repo on GitHub, GitLab, or Bitbucket
-- Node.js >= 22.12
+- A Render account (free tier works)
+- A GitHub account (for forking the repo and connecting to Render)
+- Node.js >= 22.12 (`node -v` to check; `nvm install 22` if needed)
 - The Render CLI
 - Optional: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for real model output
 
 No LLM provider API key is required. With no provider key set, the agent uses a
 deterministic mock model, so every deploy and test still works.
 
-## 1. Prepare your repo
+## 1. Fork and namespace the repo
 
-Fork or copy this repository into a Git provider account that Render can access.
-Then clone your copy:
+Fork this repository into your own GitHub account. Then namespace the Render
+Blueprints so your resource names don't collide with other attendees:
+
+1. In your fork on GitHub, go to the **Actions** tab.
+2. Find the **"Setup attendee Blueprint names"** workflow in the left sidebar.
+3. Click **Run workflow** (use the default branch).
+
+This runs `npm run setup`, which prefixes every Render resource name in the
+three `render.yaml` Blueprint files with your GitHub username, then commits the
+change back to your fork.
+
+If you prefer to do it locally instead of through GitHub Actions:
 
 ```sh
-git clone <your-repo-url>
+git clone <your-fork-url>
+cd workflow-agents-workshop
+npm install
+npm run setup
+git add packages/*/render.yaml
+git commit -m "Namespace Render resources"
+git push
+```
+
+Either way, clone your fork afterward if you haven't already:
+
+```sh
+git clone <your-fork-url>
 cd workflow-agents-workshop
 npm install
 ```
@@ -57,8 +82,8 @@ pattern.
 In the Render Dashboard, make sure your Git provider is connected and the forked
 repo is visible. Patterns 1 and 2 deploy from Blueprints inside this repo:
 
-- [`packages/naive-agent/render.yaml`](../packages/naive-agent/render.yaml)
-- [`packages/worker-agents/render.yaml`](../packages/worker-agents/render.yaml)
+- [`packages/naive-agent/render.yaml`](../../packages/naive-agent/render.yaml)
+- [`packages/worker-agents/render.yaml`](../../packages/worker-agents/render.yaml)
 
 Each Blueprint creates a Render project with a `production` environment, keeping
 that pattern's services and datastores grouped together.

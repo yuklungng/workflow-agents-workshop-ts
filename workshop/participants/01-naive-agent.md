@@ -1,5 +1,8 @@
 # 01 — Naive agent (in-process)
 
+> **Session 1 — Module 1 (~15 min).** Deploy the simplest version, see it work,
+> then understand where it breaks. This sets up the motivation for Pattern 2.
+
 > The agent runs inside the web request. Simple, complete, and the baseline we
 > spend the rest of the workshop improving.
 
@@ -15,7 +18,7 @@ browser ──POST /api/reviews──▶ web service (single process)
                                   respond when done
 ```
 
-The whole pipeline lives in [`packages/naive-agent/src/server.ts`](../packages/naive-agent/src/server.ts).
+The whole pipeline lives in [`packages/naive-agent/src/server.ts`](../../packages/naive-agent/src/server.ts).
 Notice the handler `await`s `runReview()` and only then responds.
 
 ## Deploy it first

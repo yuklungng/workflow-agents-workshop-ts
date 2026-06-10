@@ -42,7 +42,7 @@ So the real question is: *how much of that infrastructure do you build and maint
 
 **Notes**
 
-We have one code-review pipeline: fetch a PR, filter out noise, fan out specialist reviewers in parallel, then a judge consolidates findings into an approve-or-request-changes verdict. The agents are defined once in a shared package. What changes is the infrastructure that runs them. 
+We have one code-review pipeline: fetch a PR, filter out noise, fan out specialist reviewers in parallel, then a judge consolidates findings into an approve-or-request-changes verdict. The agents are defined once in a shared package. The security reviewer hunts for injection, auth gaps, secret exposure, and dependency risk — it has a `scan_for_secrets` tool. The performance reviewer targets N+1 queries, hot-path waste, unbounded memory, and blocking I/O — it has a `diff_stats` tool. The UX reviewer only joins when the diff touches frontend files, and it checks accessibility, state coverage, and interaction clarity — it has a `contrast_ratio` tool. The judge receives all findings, deduplicates, weighs severity, and returns a single approve-or-request-changes verdict as structured JSON. What changes is the infrastructure that runs them.
 
 We will examine three patterns of deployment patterns. 
 
@@ -110,10 +110,18 @@ DEMO: Talk through submitting a large PR — the request hangs. Or talk through 
 
 ```mermaid
 flowchart LR
-  browser["Browser"] --> web["Web service"]
-  web --> queue["Valkey stream"]
-  queue --> worker["Background worker"]
-  worker --> db["Postgres"]
+  browser["Browser"] -->|"POST /api/reviews"| web["Web service"]
+  web -->|"XADD job"| stream[("Valkey stream\n+ consumer group")]
+  stream -->|"XREADGROUP\nBLOCK 5000"| w1["Worker 1"]
+  stream -->|"XREADGROUP\nBLOCK 5000"| w2["Worker 2"]
+  w1 -->|"XACK on success"| stream
+  w2 -->|"XACK on success"| stream
+  w1 -->|"runReview()"| db[("Postgres")]
+  w2 -->|"runReview()"| db
+  w1 -.->|"PUBLISH progress"| pubsub{{"Valkey pub/sub"}}
+  w2 -.->|"PUBLISH progress"| pubsub
+  pubsub -.->|"SUBSCRIBE"| web
+  web -.->|"SSE"| browser
 ```
 
 - The web tier becomes a thin producer — enqueue and return `202`
@@ -197,30 +205,25 @@ Same pipeline, same agents, same tools. But now every reviewer runs as its own R
 
 ---
 
-## Slide 11 — The bridge: `agentTask.ts`
+## Slide 11 — Agents as tasks
 
 ```ts
-
-// agentTask.ts — wrap any shared agent as a Render task. This is the whole bridge.
-export function agentTask(agent) {
-  return task(
-    { name: agent.name },                    // + optional timeout, retry, compute size
-    (input, runId) => agent.run(input, { tracer: storeTracer(), runId }),
-  );
-}
-
+const securityTask = task(
+  { name: "security", timeoutSeconds: 120, retry: { maxRetries: 2 } },
+  async (input, runId?) => {
+    return securityReviewer.run(input, { tracer: storeTracer(), runId });
+  },
+);
 ```
 
-- One function wraps any shared agent as a Render task
-- Each call runs in its own container
-- Retries are per-task, not per-pipeline
-- Spans are recorded automatically — every LLM turn, every tool call
+- `task()` is the entire Render primitive — a config object + a function
+- `agent.run()` is the same call naive-agent and worker-agents make
+- Wrapping it in `task()` buys isolation, retries, and traces
+- No wrapper file, no factory function — just the SDK call
 
 **Notes**
 
-This is `agentTask.ts`. It's the only Pattern-3-specific code. `agent.run()` is the same call naive-agent and worker-agents make. Wrapping it in `task()` is what buys isolation, retries, and traces. That's the entire abstraction.
-
-This is the entire API surface. A config object and a function. Name, timeout, retry behavior, optional compute size. That's it. The retries you hand-wrote in Lab 1 — the ack inside the try, the catch that swallows errors — are now `maxRetries: 2`. Same guarantee. Config object.
+Look at `code-review/index.ts`. Each reviewer is registered as a `task()` right there in the file. There's no separate bridge module. The config object is the retries you hand-wrote in Lab 1 — the ack inside the try, the catch that swallows errors — collapsed to `maxRetries: 2`. And `agent.run()` is byte-for-byte the same call the other two patterns make. Wrapping it in `task()` is what buys isolation, retries, and traces. That's the entire API surface.
 
 ---
 
@@ -231,12 +234,17 @@ This is the entire API surface. A config object and a function. Name, timeout, r
 1. **Preview it:** `render workflows tasks list --local` → `your-review` is already there
 2. **Compose an agent as a task:**
    ```ts
-   const securityTask = agentTask(securityReviewer);
+
+   const securityTask = task(
+     { name: "security", timeoutSeconds: 120 },
+     async (input) => securityReviewer.run(input, { tracer: storeTracer() }),
+   );
    const review = await securityTask({ patches });
+
    ```
    — nested `security` task appears in the trace
 3. **Force a retry:** `if (Math.random() < 0.5) throw new Error("flaky!");` — watch Render retry in a fresh instance. Remove after.
-4. **Fan out:** `REVIEWERS.map(agentTask)` + `Promise.all` — same shape as `code-review`
+4. **Fan out:** one `task()` per reviewer + `Promise.all` — same shape as `code-review`
 5. **Ship it live:** push, release, start the task, open the trace
 
 **Notes**
@@ -280,9 +288,9 @@ The only infrastructure you wrote was a function and a config object. Everything
 **Resources**
 
 - **This repo:** all three patterns, the mock model, the full test suite
-- **Docs:** `docs/00` through `docs/05` — the guided walkthrough
+- **Docs:** `workshop/participants/00` through `05` — the guided walkthrough
 - **Render Workflows:** `render.com/docs/workflows`
-- **Bonus points:** reflection loops, MCP tools, HITL gates → `docs/04-author-a-task.md`
+- **Bonus points:** reflection loops, MCP tools, HITL gates → `workshop/participants/04-author-a-task.md`
 
 **Notes**
 

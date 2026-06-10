@@ -1,5 +1,10 @@
 # 02 — Worker agents (queue + background worker)
 
+> **Session 1 — Module 2 (~20 min) + Lab 1 (~20 min).** This pattern adds
+> durability and scale, but you pay for it with coordination code. The exercise
+> at the end is hands-on — do it by hand, no coding agents yet. That setup is
+> what makes Pattern 3 land. A break follows Lab 1.
+
 > Same agent, different substrate. The web tier becomes a thin producer. A
 > Background Worker consumes a Valkey queue and runs the review out-of-band.
 
@@ -14,9 +19,9 @@ Valkey stream ─▶ worker (consumer)        [scale: run N workers]
                   write telemetry → Postgres
 ```
 
-- Producer: [`packages/worker-agents/src/web.ts`](../packages/worker-agents/src/web.ts)
-- Consumer: [`packages/worker-agents/src/worker.ts`](../packages/worker-agents/src/worker.ts)
-- Queue + pub/sub: [`worker-agents/src/kv.ts`](../packages/worker-agents/src/kv.ts)
+- Producer: [`packages/worker-agents/src/web.ts`](../../packages/worker-agents/src/web.ts)
+- Consumer: [`packages/worker-agents/src/worker.ts`](../../packages/worker-agents/src/worker.ts)
+- Queue + pub/sub: [`worker-agents/src/kv.ts`](../../packages/worker-agents/src/kv.ts)
 
 The agent code did not change. Only *where it runs* did.
 
@@ -52,7 +57,7 @@ Blueprint and sync it. Throughput rises without changing the agent code.
 ## Exercise: write the ack semantics
 
 Before you run it, you implement the one piece that *is* the worker pattern.
-Open [`worker-agents/src/kv.ts`](../packages/worker-agents/src/kv.ts) and find
+Open [`worker-agents/src/kv.ts`](../../packages/worker-agents/src/kv.ts) and find
 `processEntry` — it currently throws. Your job: handle one delivered stream
 entry and decide whether to acknowledge it.
 
@@ -102,7 +107,7 @@ Try these demos:
 
 ## What you had to build yourself
 
-Look at [`worker-agents/src/kv.ts`](../packages/worker-agents/src/kv.ts): the stream, the consumer group,
+Look at [`worker-agents/src/kv.ts`](../../packages/worker-agents/src/kv.ts): the stream, the consumer group,
 blocking reads, acks, retry-on-failure (un-acked messages), and the pub/sub
 progress channel. It's all coordination code *you* now own and
 debug.

@@ -1,11 +1,11 @@
 /**
  * Code-review workflow — the root Render Workflow task.
  *
- * Importing this module registers the `code-review` task *and* one task per
- * shared agent (the top-level `agentTask(...)` calls). Inside the task body,
- * `prepareDiff` runs in-process and each reviewer runs as its own chained Render
- * task via `Promise.all` — the same fan-out as naive-agent and worker-agents, but each agent in
- * its own isolated instance.
+ * Each reviewer is registered as its own `task()` directly — no wrapper, no
+ * indirection. Inside the root task, `prepareDiff` runs in-process and each
+ * reviewer runs as its own chained Render task via `Promise.all` — the same
+ * fan-out as naive-agent and worker-agents, but each agent in its own isolated
+ * instance.
  *
  * The agents themselves come from @workshop/agent — identical to the ones the
  * naive and worker patterns run.
@@ -21,21 +21,39 @@ import {
   hasFrontendFiles,
   judge,
 } from "@workshop/agent";
-import { agentTask } from "../../agentTask.js";
+import { storeTracer } from "@workshop/db";
 
-// Register each shared agent as its own Render task (at module load). Every agent
-// is registered up front; the UX task is only *invoked* when the diff warrants it.
-const securityTask = agentTask(securityReviewer);
-const performanceTask = agentTask(performanceReviewer);
-const uxTask = agentTask(uxReviewer);
-const judgeTask = agentTask(judge);
+// Each shared agent is registered as its own Render task. The `task()` call is
+// the whole bridge — `agent.run()` is the same call naive-agent and
+// worker-agents make; wrapping it in `task()` buys isolation, retries, and traces.
+type Patches = Array<{ file: string; diff: string }>;
+type Findings = Array<{ agent: string; note: string }>;
+const ctx = (runId?: string) => ({ tracer: storeTracer(), ...(runId ? { runId } : {}) });
+
+const securityTask = task(
+  { name: "security", timeoutSeconds: 120, retry: { maxRetries: 2, waitDurationMs: 1000, backoffScaling: 2 } },
+  async (input: { patches: Patches }, runId?: string) => securityReviewer.run(input, ctx(runId)),
+);
+
+const performanceTask = task(
+  { name: "performance", timeoutSeconds: 120, retry: { maxRetries: 2, waitDurationMs: 1000, backoffScaling: 2 } },
+  async (input: { patches: Patches }, runId?: string) => performanceReviewer.run(input, ctx(runId)),
+);
+
+const uxTask = task(
+  { name: "ux", timeoutSeconds: 120, retry: { maxRetries: 2, waitDurationMs: 1000, backoffScaling: 2 } },
+  async (input: { patches: Patches }, runId?: string) => uxReviewer.run(input, ctx(runId)),
+);
+
+const judgeTask = task(
+  { name: "judge", timeoutSeconds: 120, retry: { maxRetries: 2, waitDurationMs: 1000, backoffScaling: 2 } },
+  async (input: { findings: Findings }, runId?: string) => judge.run(input, ctx(runId)),
+);
 
 interface CodeReviewInput {
   url: string;
   labels?: string[];
-  /** Break-glass: review the whole diff, including noise files. */
   breakGlass?: boolean;
-  /** Correlation id — links this run's agent spans together in the viewer. */
   _runId?: string;
 }
 
@@ -48,7 +66,6 @@ export default task(
   async function codeReview(input: CodeReviewInput) {
     const runId = input._runId;
 
-    // Deterministic steps run in-process; agents run as chained Render tasks.
     const allPatches = await prepareDiff({ url: input.url, labels: input.labels ?? [] });
     const breakGlass = input.breakGlass || (input.labels ?? []).includes("break-glass");
     const { patches } = filterDiff(allPatches, breakGlass ? { breakGlass } : {});
@@ -71,10 +88,6 @@ export default task(
 
     const decision = await judgeTask({ findings: reviewerResults.map(({ agent, note }) => ({ agent, note })) }, runId);
 
-    // The fan-out above is the substrate-specific part worth seeing. Parsing the
-    // verdict, stripping reviewer usage, and totalling tokens is identical to the
-    // naive/worker patterns, so it lives in one shared helper rather than being
-    // copy-pasted here.
     return toReviewSummary(reviewerResults, decision);
   },
 );
